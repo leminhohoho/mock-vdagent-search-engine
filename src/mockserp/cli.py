@@ -1,7 +1,8 @@
-"""`mockserp ingest | serve` command line."""
+"""`mockserp seed | ingest | serve` command line."""
 
 import argparse
 import sys
+from pathlib import Path
 
 import openai
 
@@ -57,16 +58,30 @@ def _serve(settings: Settings) -> None:
     uvicorn.run(create_app(index, embedder, settings), host=settings.host, port=settings.port)
 
 
+def _seed(settings: Settings, args: argparse.Namespace) -> None:
+    from .seed import run
+
+    out = args.out or settings.corpus_dir / "demo.jsonl"
+    run(args.seeds, out, delay=args.delay)
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="mockserp", description=__doc__)
+    parser = argparse.ArgumentParser(prog="mockserp", description="Mock Tavily search engine")
     sub = parser.add_subparsers(dest="command", required=True)
+    seed = sub.add_parser("seed", help="crawl seed URLs into a corpus JSONL file")
+    seed.add_argument("--seeds", type=Path, default=Path("data/seeds.txt"))
+    seed.add_argument("--out", type=Path, help="default: CORPUS_DIR/demo.jsonl")
+    seed.add_argument("--delay", type=float, default=1.0, help="seconds between requests")
     sub.add_parser("ingest", help="build the search index from CORPUS_DIR into INDEX_DIR")
     sub.add_parser("serve", help="serve the Tavily-compatible API")
     args = parser.parse_args(argv)
 
     settings = Settings()
     try:
-        {"ingest": _ingest, "serve": _serve}[args.command](settings)
+        if args.command == "seed":
+            _seed(settings, args)
+        else:
+            {"ingest": _ingest, "serve": _serve}[args.command](settings)
     except StartupError as e:
         print(f"mockserp: {e}", file=sys.stderr)
         return 1

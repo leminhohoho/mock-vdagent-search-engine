@@ -78,3 +78,21 @@ def test_settings_default_base_url_is_openai(monkeypatch):
     for k in ("EMBEDDING_BASE_URL", "OPENAI_BASE_URL"):
         monkeypatch.delenv(k, raising=False)
     assert Settings(_env_file=None).embedding_base_url == "https://api.openai.com/v1"
+
+
+def test_dotenv_file_overrides_shell_environment(tmp_path, monkeypatch):
+    # Shell exports a key for another provider; the project's .env must win.
+    for k in ("EMBEDDING_API_KEY", "EMBEDDING_BASE_URL", "EMBEDDING_MODEL"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "shell-openai-key")
+    monkeypatch.setenv("EMBEDDING_MODEL", "shell-model")
+    env = tmp_path / ".env"
+    env.write_text(
+        "OPENAI_API_KEY=file-openrouter-key\nOPENAI_BASE_URL=https://openrouter.ai/api/v1\n"
+    )
+
+    s = Settings(_env_file=env)
+
+    assert s.embedding_api_key == "file-openrouter-key"
+    assert s.embedding_base_url == "https://openrouter.ai/api/v1"
+    assert s.embedding_model == "shell-model"  # not in .env, so the shell value still applies

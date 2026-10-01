@@ -204,6 +204,8 @@ Response: `{"results": [...], "failed_results": [...], "response_time", "request
 
 ## 9. Configuration (`.env`, documented in `.env.example`)
 
+Precedence: `./.env` overrides shell environment variables. Shell variables apply only to settings `.env` doesn't set. This stops a globally exported `OPENAI_API_KEY` for another provider from being paired with the `.env` base URL.
+
 | Variable | Default | Purpose |
 |---|---|---|
 | `EMBEDDING_BASE_URL` | `OPENAI_BASE_URL`, else `https://api.openai.com/v1` | OpenAI-compatible endpoint |

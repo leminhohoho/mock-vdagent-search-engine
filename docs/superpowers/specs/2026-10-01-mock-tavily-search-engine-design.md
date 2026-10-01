@@ -84,7 +84,7 @@ The index is built in a temporary sibling directory and renamed into place, so a
 ## 5. Ingest
 
 1. Load and validate every `*.jsonl` in `CORPUS_DIR`.
-2. Chunk each `raw_content`: split into sentences (on `.`, `!` or `?` followed by whitespace, and on blank lines), then pack sentences greedily into chunks of **≤500 characters**. A single sentence longer than 500 characters is hard-split at the last whitespace before 500. Chunks never overlap. Joining a document's chunks with whitespace reproduces its text, apart from whitespace normalization.
+2. Chunk each `raw_content`: split into units (sentences ending in `.`, `!` or `?` followed by whitespace, and lines, since every line break is a boundary so Markdown headings and list items stay whole), then pack units greedily into chunks of **≤500 characters**. A unit longer than 500 characters is hard-split at the last whitespace before 500, or at 500 if there is none. Chunks are verbatim slices of the source (Markdown preserved) and never overlap. Joining a document's chunks with whitespace reproduces its text, apart from whitespace normalization.
 3. Indexed text per chunk = `title + "\n" + chunk_text`. It is used for both BM25 tokens and embeddings, so deep chunks still match the page's subject.
 4. Embed in batches of `EMBEDDING_BATCH_SIZE` (default 128), relying on the `openai` SDK's built-in retries.
 5. Write the index (§4.2).
@@ -205,8 +205,8 @@ Response: `{"results": [...], "failed_results": [...], "response_time", "request
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `EMBEDDING_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible endpoint |
-| `EMBEDDING_API_KEY` | — (required for ingest and serve) | |
+| `EMBEDDING_BASE_URL` | `OPENAI_BASE_URL`, else `https://api.openai.com/v1` | OpenAI-compatible endpoint |
+| `EMBEDDING_API_KEY` | `OPENAI_API_KEY` (one of them required for ingest and serve) | |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | Must match the index's `meta.json` at serve time |
 | `EMBEDDING_BATCH_SIZE` | `128` | |
 | `CORPUS_DIR` | `data/corpus` | |

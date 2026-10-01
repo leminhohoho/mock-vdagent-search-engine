@@ -1,0 +1,43 @@
+[project]
+name = "mockserp"
+version = "0.1.0"
+description = "Mock Tavily-compatible search engine over a local corpus (hybrid BM25 + embeddings)"
+authors = [
+    { name = "Le Minh Nguyen", email = "leminhnguyenai@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "numpy>=2.5.3",
+    "openai>=3.22.1",
+    "pydantic-settings>=2.15.0",
+    "rank-bm25>=0.2.2",
+    "trafilatura>=2.2.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.scripts]
+mockserp = "mockserp.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.9",
+    "tavily-python>=0.8.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]

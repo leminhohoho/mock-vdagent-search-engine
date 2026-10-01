@@ -63,7 +63,11 @@ def _parse_row(row: object) -> Document:
     if not isinstance(row, dict):
         raise ValueError("row must be a JSON object")
     url = row.get("url")
-    if not isinstance(url, str) or urlsplit(url).scheme not in _DEFAULT_PORTS or not urlsplit(url).hostname:
+    if (
+        not isinstance(url, str)
+        or urlsplit(url).scheme not in _DEFAULT_PORTS
+        or not urlsplit(url).hostname
+    ):
         raise ValueError(f"url must be an absolute http(s) URL, got {url!r}")
     for field in ("title", "raw_content"):
         value = row.get(field)
@@ -100,7 +104,9 @@ def load_corpus(corpus_dir: Path) -> list[Document]:
                 except ValueError as e:
                     raise CorpusError(f"{where}: {e}") from e
                 if doc.norm_url in seen:
-                    raise CorpusError(f"{where}: duplicate url {doc.url!r} (first at {seen[doc.norm_url]})")
+                    raise CorpusError(
+                        f"{where}: duplicate url {doc.url!r} (first at {seen[doc.norm_url]})"
+                    )
                 seen[doc.norm_url] = where
                 docs.append(doc)
     if not docs:

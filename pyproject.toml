@@ -12,7 +12,6 @@ dependencies = [
     "numpy>=2.5.3",
     "openai>=3.22.1",
     "pydantic-settings>=2.15.0",
-    "rank-bm25>=0.2.2",
     "trafilatura>=2.2.0",
     "uvicorn>=0.54.0",
 ]

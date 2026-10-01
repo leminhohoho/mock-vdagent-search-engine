@@ -33,7 +33,7 @@ def test_newlines_are_boundaries_and_markdown_is_preserved():
 
 
 def test_overlong_sentence_is_hard_split_at_whitespace():
-    words = ["word%03d" % i for i in range(200)]  # 7 chars each
+    words = [f"word{i:03d}" for i in range(200)]  # 7 chars each
     text = " ".join(words) + "."
     chunks = chunk(text)
     assert len(chunks) > 1

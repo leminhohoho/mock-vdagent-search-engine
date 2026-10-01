@@ -59,11 +59,22 @@ DOC = {
 
 def test_load_corpus_reads_all_jsonl_files_in_name_order(tmp_path):
     _write(tmp_path / "b.jsonl", [{**DOC, "url": "https://b.example/x"}])
-    _write(tmp_path / "a.jsonl", [DOC, "", {"url": "https://a.example/", "title": "T", "raw_content": "C"}])
+    _write(
+        tmp_path / "a.jsonl",
+        [DOC, "", {"url": "https://a.example/", "title": "T", "raw_content": "C"}],
+    )
     docs = load_corpus(tmp_path)
-    assert [d.url for d in docs] == ["https://www.energy.gov/storage", "https://a.example/", "https://b.example/x"]
+    assert [d.url for d in docs] == [
+        "https://www.energy.gov/storage",
+        "https://a.example/",
+        "https://b.example/x",
+    ]
     first = docs[0]
-    assert (first.title, first.raw_content, first.favicon) == ("Storage", "Batteries.", DOC["favicon"])
+    assert (first.title, first.raw_content, first.favicon) == (
+        "Storage",
+        "Batteries.",
+        DOC["favicon"],
+    )
     assert first.published_date == datetime(2024, 5, 14, tzinfo=UTC)
     assert first.host == "www.energy.gov"
     assert docs[1].published_date is None and docs[1].favicon is None

@@ -49,7 +49,8 @@ All code lives in `src/mockserp/`. Each module has one job.
 | `corpus.py` | `Document` model; reads and validates corpus JSONL; parses dates; normalizes URLs | — |
 | `chunker.py` | `chunk(text) -> list[str]`: sentence-aware chunks of at most 500 characters, no overlap | — |
 | `embedder.py` | `Embedder` protocol: `embed(texts: list[str]) -> np.ndarray` (float32, L2-normalized). `OpenAIEmbedder` implementation | `openai`, `numpy` |
-| `index.py` | `build_index(corpus_dir, index_dir, embedder)` and `Index.load(index_dir)`. Holds documents, chunks, the embedding matrix and BM25 | corpus, chunker, embedder, `rank_bm25` |
+| `bm25.py` | BM25 with Lucene's always-positive IDF `ln(1 + (N − n + 0.5)/(n + 0.5))`, k1 = 1.2, b = 0.75. Chosen over `rank_bm25`'s Okapi IDF, which is ≤ 0 for terms in at least half of the chunks and wipes out matches in small or single-topic corpora | `numpy` |
+| `index.py` | `build_index(corpus_dir, index_dir, embedder)` and `Index.load(index_dir)`. Holds documents, chunks, the embedding matrix and BM25 | corpus, chunker, embedder, bm25 |
 | `search.py` | `search(index, embedder, params) -> list[Hit]`: filtering, hybrid retrieval, document roll-up, snippet selection. `extract(...)` chunk reranking | index |
 | `api.py` | FastAPI app: Tavily request and response models, auth, error mapping, `/search`, `/extract` | search, config |
 | `seed.py` | Polite crawler: seed URLs → corpus JSONL with a skip report | `httpx`, `trafilatura` |
@@ -100,7 +101,7 @@ The index is built in a temporary sibling directory and renamed into place, so a
    - `exclude_domains`: drop matches, using the same suffix rule. Exclude wins over include.
    - Date window (see below).
    - `exact_match=true`: every `"quoted phrase"` in the query (regex `"([^"]+)"`) must appear in the document: the phrase's token sequence must occur contiguously in the token sequence of `title + "\n" + raw_content` (same tokenizer, so case and punctuation are ignored, as in Tavily). A query with no quotes is unaffected. Quote characters are kept in the query used for BM25 and embeddings; the tokenizer drops them anyway.
-2. **Lexical candidates:** BM25Okapi scores over chunks of allowed documents; take the top 50 with score > 0.
+2. **Lexical candidates:** BM25 (`bm25.py`) scores over chunks of allowed documents; take the top 50 with score > 0.
 3. **Semantic candidates:** embed the query; dot product against the allowed chunks' rows; top 50.
 4. **Fusion:** `rrf(c) = Σ_lists 1 / (60 + rank)`, with rank starting at 1.
 5. **Document roll-up:** `doc_score = max rrf` over its candidate chunks. Sort by `(-doc_score, url)`. If `include_domains_mode="prefer"`, stable-partition so documents from included domains come first. Cut to `max_results`.
@@ -228,7 +229,7 @@ Response: `{"results": [...], "failed_results": [...], "response_time", "request
 ## 11. Tooling
 
 - **uv** project with a `src/` layout, Python ≥3.12, `pyproject.toml` and `uv.lock` committed, and a `mockserp` console script.
-- Runtime dependencies: `fastapi`, `uvicorn`, `pydantic-settings`, `openai`, `numpy`, `rank-bm25`, `httpx`, `trafilatura`.
+- Runtime dependencies: `fastapi`, `uvicorn`, `pydantic-settings`, `openai`, `numpy`, `httpx`, `trafilatura`.
 - Dev dependencies: `pytest`, `ruff`, `tavily-python`.
 - **Makefile** targets:
 

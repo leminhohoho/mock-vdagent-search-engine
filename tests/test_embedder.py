@@ -30,8 +30,15 @@ def test_embeds_in_batches_preserving_input_order_and_normalizing():
             {"object": "embedding", "index": i, "embedding": [float(len(t)), 0.0, 1.0]}
             for i, t in enumerate(body["input"])
         ][::-1]
-        return httpx.Response(200, json={"object": "list", "data": data, "model": "emb-model",
-                                         "usage": {"prompt_tokens": 1, "total_tokens": 1}})
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": data,
+                "model": "emb-model",
+                "usage": {"prompt_tokens": 1, "total_tokens": 1},
+            },
+        )
 
     emb = OpenAIEmbedder(_client(handler), model="emb-model", batch_size=2)
     out = emb.embed(["a", "bbb", "cccc"])

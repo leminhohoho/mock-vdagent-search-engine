@@ -196,7 +196,7 @@ Response: `{"results": [...], "failed_results": [...], "response_time", "request
 
 ## 8. Demo corpus (`mockserp seed`)
 
-- Input: `data/seeds.txt`, one URL per line (`#` comments allowed). It has about 60 URLs on **grid-scale energy storage** spread over several domains: Wikipedia (CC BY-SA), US government sites such as energy.gov, nrel.gov and eia.gov (public domain), and a few openly licensed explainers. A shared theme gives ranking and domain filters real competition.
+- Input: `data/seeds.txt`, one URL per line (`#` comments allowed). It has 62 URLs on **grid-scale energy storage**: 49 from Wikipedia (CC BY-SA) and 13 from US government sites (energy.gov, eia.gov, epa.gov, sandia.gov; public domain). A shared theme gives ranking and domain filters real competition. IEA, PNNL and FERC returned 403 to the crawler, and nrel.gov did not resolve from the build machine, so they were removed. The first crawl kept 62/62 pages (2.06M characters).
 - Crawl: one `httpx` GET per seed with no link following. `robots.txt` is checked with `urllib.robotparser`. The User-Agent is `mockserp-seed/0.1 (+demo corpus builder)`, there is 1 second between requests and a 20-second timeout.
 - Extraction: `trafilatura` produces the main content as Markdown, plus metadata (title, date).
 - A page is skipped and listed in the skip report on fetch failure, robots disallow, extracted text under 1,000 characters, or a duplicate normalized URL.

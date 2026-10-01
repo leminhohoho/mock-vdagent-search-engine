@@ -1,0 +1,73 @@
+# Demo corpus theme: grid-scale energy storage.
+# Sources: Wikipedia (CC BY-SA 4.0) and US government sites (public domain).
+# One URL per line; crawled once each with `make seed` (no link following).
+
+# --- Wikipedia: technologies ---
+https://en.wikipedia.org/wiki/Grid_energy_storage
+https://en.wikipedia.org/wiki/Energy_storage
+https://en.wikipedia.org/wiki/Pumped-storage_hydroelectricity
+https://en.wikipedia.org/wiki/Battery_energy_storage_system
+https://en.wikipedia.org/wiki/Lithium-ion_battery
+https://en.wikipedia.org/wiki/Lithium_iron_phosphate_battery
+https://en.wikipedia.org/wiki/Sodium-ion_battery
+https://en.wikipedia.org/wiki/Sodium%E2%80%93sulfur_battery
+https://en.wikipedia.org/wiki/Flow_battery
+https://en.wikipedia.org/wiki/Vanadium_redox_battery
+https://en.wikipedia.org/wiki/Zinc%E2%80%93bromine_battery
+https://en.wikipedia.org/wiki/Iron%E2%80%93air_battery
+https://en.wikipedia.org/wiki/Molten-salt_battery
+https://en.wikipedia.org/wiki/Compressed-air_energy_storage
+https://en.wikipedia.org/wiki/Liquid_air_energy_storage
+https://en.wikipedia.org/wiki/Flywheel_energy_storage
+https://en.wikipedia.org/wiki/Gravity_battery
+https://en.wikipedia.org/wiki/Thermal_energy_storage
+https://en.wikipedia.org/wiki/Hydrogen_storage
+https://en.wikipedia.org/wiki/Power-to-gas
+https://en.wikipedia.org/wiki/Supercapacitor
+https://en.wikipedia.org/wiki/Superconducting_magnetic_energy_storage
+
+# --- Wikipedia: grid operation & economics ---
+https://en.wikipedia.org/wiki/Variable_renewable_energy
+https://en.wikipedia.org/wiki/Duck_curve
+https://en.wikipedia.org/wiki/Peaking_power_plant
+https://en.wikipedia.org/wiki/Load-following_power_plant
+https://en.wikipedia.org/wiki/Demand_response
+https://en.wikipedia.org/wiki/Vehicle-to-grid
+https://en.wikipedia.org/wiki/Virtual_power_plant
+https://en.wikipedia.org/wiki/Ancillary_services_(electric_power)
+https://en.wikipedia.org/wiki/Levelized_cost_of_electricity
+https://en.wikipedia.org/wiki/Smart_grid
+https://en.wikipedia.org/wiki/Electrical_grid
+https://en.wikipedia.org/wiki/Black_start
+https://en.wikipedia.org/wiki/Capacity_factor
+https://en.wikipedia.org/wiki/Curtailment_(electricity)
+https://en.wikipedia.org/wiki/Microgrid
+https://en.wikipedia.org/wiki/Utility_frequency
+https://en.wikipedia.org/wiki/Solid-state_battery
+https://en.wikipedia.org/wiki/Battery_recycling
+https://en.wikipedia.org/wiki/Capacity_market
+
+# --- Wikipedia: notable projects ---
+https://en.wikipedia.org/wiki/Hornsdale_Power_Reserve
+https://en.wikipedia.org/wiki/Moss_Landing_Power_Plant
+https://en.wikipedia.org/wiki/Bath_County_Pumped_Storage_Station
+https://en.wikipedia.org/wiki/Dinorwig_Power_Station
+https://en.wikipedia.org/wiki/Snowy_2.0
+https://en.wikipedia.org/wiki/Victorian_Big_Battery
+https://en.wikipedia.org/wiki/Ludington_Pumped_Storage_Power_Plant
+https://en.wikipedia.org/wiki/Fengning_Pumped_Storage_Power_Station
+
+# --- US government (public domain) ---
+https://www.energy.gov/eere/water/pumped-storage-hydropower
+https://www.energy.gov/eere/water/types-hydropower-plants
+https://www.energy.gov/oe/energy-storage
+https://www.energy.gov/eere/solar/solar-integration-distributed-energy-resources-and-microgrids
+https://www.energy.gov/eere/vehicles/batteries-charging-and-electric-vehicles
+https://www.eia.gov/energyexplained/electricity/energy-storage-for-electricity-generation.php
+https://www.eia.gov/energyexplained/electricity/electricity-in-the-us-generation-capacity-and-sales.php
+https://www.eia.gov/energyexplained/electricity/delivery-to-consumers.php
+https://www.eia.gov/energyexplained/hydropower/
+https://www.eia.gov/energyexplained/hydrogen/
+https://www.eia.gov/energyexplained/wind/electricity-generation-from-wind.php
+https://www.epa.gov/energy/electricity-storage
+https://www.sandia.gov/ess/

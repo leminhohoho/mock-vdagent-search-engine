@@ -58,7 +58,7 @@ Errors use Tavily's `{"detail": {"error": "..."}}` shape: 400 for invalid input,
 
 ## Configuration
 
-See [`.env.example`](.env.example). `EMBEDDING_*` settings take precedence over `OPENAI_BASE_URL` / `OPENAI_API_KEY`. `serve` refuses to start if the index was built with a different `EMBEDDING_MODEL`. Set `MOCK_NOW` to pin "now" so `time_range` filters give reproducible results.
+See [`.env.example`](.env.example). `EMBEDDING_*` settings take precedence over `OPENAI_BASE_URL` / `OPENAI_API_KEY`, and shell environment variables override `.env`. If your shell exports an `OPENAI_API_KEY` for a different provider than the `.env` base URL, set `EMBEDDING_API_KEY` explicitly. `serve` refuses to start if the index was built with a different `EMBEDDING_MODEL`. Set `MOCK_NOW` to pin "now" so `time_range` filters give reproducible results.
 
 ## Development
 

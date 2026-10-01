@@ -36,6 +36,11 @@ class RecordingEmbedder(HashEmbedder):
         return super().embed(texts)
 
 
+def para(text: str) -> str:
+    """One sentence unit of ~300 chars (no inner sentence breaks), so two never share a chunk."""
+    return text.rstrip(".") + " " + " ".join(["filler"] * ((300 - len(text)) // 7 + 1)) + "."
+
+
 def write_corpus(directory, rows) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "corpus.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")

@@ -125,7 +125,7 @@ Checked against the official OpenAPI docs (`docs.tavily.com/documentation/api-re
 
 - Request bodies are JSON. **Unknown fields are ignored** (`extra="ignore"`), because the SDKs forward arbitrary keyword arguments.
 - **Auth:** if `MOCK_API_KEY` is unset, every request is accepted, with or without `Authorization` (any dummy key works). If it is set, `Authorization: Bearer <MOCK_API_KEY>` is required; otherwise the response is 401.
-- **Errors:** `{"detail": {"error": "<message>"}}` with status 400 (invalid value), 401 (auth) or 500 (internal, including embedding backend failure). FastAPI's default 422 validation body already matches Tavily's documented 422 shape. `tavily-python` maps 400 → `BadRequestError` and 401 → `InvalidAPIKeyError`.
+- **Errors:** `{"detail": {"error": "<message>"}}` with status 400 (invalid value), 401 (auth) or 500 (internal, including embedding backend failure). Every request validation error, whether wrong type, out of range or bad enum, is returned as **400** naming the field, never FastAPI's 422, so `tavily-python` raises `BadRequestError` for any bad input. `tavily-python` maps 400 → `BadRequestError` and 401 → `InvalidAPIKeyError`.
 - `request_id`: a fresh UUID4. `response_time`: seconds spent handling the request, rounded to 2 decimals.
 
 ### 7.2 `POST /search`

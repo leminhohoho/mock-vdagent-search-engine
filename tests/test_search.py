@@ -7,13 +7,7 @@ from mockserp.embedder import l2_normalize
 from mockserp.index import Index, build_index
 from mockserp.search import SearchError, SearchParams, extract_chunks, resolve_window, search
 
-from .conftest import HashEmbedder, write_corpus
-
-
-def para(text: str) -> str:
-    """One sentence unit of ~300 chars (no inner sentence breaks), so two never share a chunk."""
-    return text.rstrip(".") + " " + " ".join(["filler"] * ((300 - len(text)) // 7 + 1)) + "."
-
+from .conftest import HashEmbedder, para, write_corpus
 
 ZEN = {
     "url": "https://news.zentrix.example/q3",

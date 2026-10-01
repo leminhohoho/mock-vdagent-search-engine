@@ -103,7 +103,7 @@ The index is built in a temporary sibling directory and renamed into place, so a
    - `exact_match=true`: every `"quoted phrase"` in the query (regex `"([^"]+)"`) must appear in the document: the phrase's token sequence must occur contiguously in the token sequence of `title + "\n" + raw_content` (same tokenizer, so case and punctuation are ignored, as in Tavily). A query with no quotes is unaffected. Quote characters are kept in the query used for BM25 and embeddings; the tokenizer drops them anyway.
 2. **Lexical candidates:** BM25 (`bm25.py`) scores over chunks of allowed documents; take the top 50 with score > 0.
 3. **Semantic candidates:** embed the query; dot product against the allowed chunks' rows; top 50.
-4. **Fusion:** `rrf(c) = Σ_lists 1 / (60 + rank)`, with rank starting at 1.
+4. **Fusion:** `rrf(c) = Σ_lists 1 / (60 + rank)`. Ranks use competition ranking within each list: rank = 1 + the number of candidates with a strictly higher score, so tied scores share a rank and identical pages get identical scores.
 5. **Document roll-up:** `doc_score = max rrf` over its candidate chunks. Sort by `(-doc_score, url)`. If `include_domains_mode="prefer"`, stable-partition so documents from included domains come first. Cut to `max_results`.
 6. **Score field:** `score = doc_score / (2/61)`. 1.0 means ranked first in both lists. Always in (0, 1].
 7. **Snippet (`content`):** the document's top candidate chunks by `rrf`, at most `chunks_per_source` (1 for `ultra-fast`), joined with ` [...] `, in score order. A document always has at least one candidate chunk.

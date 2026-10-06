@@ -1,4 +1,9 @@
-"""Exercise a running mockserp server through the official Tavily SDK (`make demo`)."""
+"""Exercise a running mockserp server through the official Tavily SDK (`make demo`).
+
+Runs the success-criterion queries of the Supabase design spec over the real-estate papers.
+Start the server with MOCK_NOW=2026-10-06T00:00:00Z for the `time_range="week"` query to
+match the expected result.
+"""
 
 import os
 
@@ -19,24 +24,31 @@ def main() -> None:
     base_url = os.environ.get("MOCK_BASE_URL", f"http://{settings.host}:{settings.port}")
     client = TavilyClient(api_key=settings.mock_api_key or "tvly-mock", api_base_url=base_url)
 
-    show("search", client.search("pumped hydro round-trip efficiency", max_results=5))
     show(
-        "search, government sites only, with dates",
+        "search (expect paper 3 first)",
+        client.search("giải ngân gói tín dụng 145.000 tỷ nhà ở xã hội", max_results=5),
+    )
+    show(
+        "search (expect paper 17 first)",
+        client.search("giá thuê văn phòng hạng A 64,7 USD/m²", max_results=5),
+    )
+    show(
+        'exact_match "39.000 sản phẩm" (expect papers 14 and 18 only)',
+        client.search('"39.000 sản phẩm"', exact_match=True, max_results=20),
+    )
+    show(
+        "time_range=week, MOCK_NOW=2026-10-06 (expect papers 1, 2, 13, 14, 15, 16)",
         client.search(
-            "battery storage cost",
-            include_domains=["energy.gov", "eia.gov", "nrel.gov", "pnnl.gov"],
+            "thị trường bất động sản",
+            time_range="week",
             include_published_date=True,
-            max_results=5,
+            max_results=20,
         ),
     )
-    show(
-        'search, exact_match "Hornsdale"',
-        client.search('"Hornsdale" Tesla battery South Australia', exact_match=True, max_results=3),
-    )
 
-    top = client.search("compressed air energy storage caverns", max_results=1)["results"][0]
-    extracted = client.extract([top["url"], "https://unknown.example/page"], query="salt cavern")
-    print(f"\n=== extract {top['url']} (query='salt cavern', chunks_per_source=3)")
+    top = client.search("nhà ở xã hội", max_results=1)["results"][0]
+    extracted = client.extract([top["url"], "https://unknown.example/page"], query="lãi suất vay")
+    print(f"\n=== extract {top['url']} (query='lãi suất vay', chunks_per_source=3)")
     for r in extracted["results"]:
         print(f"  {r['raw_content'][:300]!r}")
     print(f"  failed: {extracted['failed_results']}")

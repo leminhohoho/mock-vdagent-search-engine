@@ -1,7 +1,7 @@
 [project]
 name = "mockserp"
 version = "0.1.0"
-description = "Mock Tavily-compatible search engine over a local corpus (hybrid BM25 + embeddings)"
+description = "Mock Tavily-compatible search engine over a Markdown corpus (pgvector search in Postgres)"
 authors = [
     { name = "Le Minh Nguyen", email = "leminhnguyenai@gmail.com" }
 ]

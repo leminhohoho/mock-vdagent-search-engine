@@ -2,19 +2,19 @@
 
 Date: 2026-10-06
 Status: Draft, pending written-spec review
-Builds on: [`2026-10-01-mock-tavily-search-engine-design.md`](2026-10-01-mock-tavily-search-engine-design.md). Everything in that spec stays true unless this document says otherwise.
+Builds on: [`2026-10-01-mock-tavily-search-engine-design.md`](2026-10-01-mock-tavily-search-engine-design.md). Everything in that spec stays true unless this document says otherwise. This change replaces its §4.1 (JSONL corpus) and removes its §8 (demo corpus and `seed` crawler).
 
 ## 1. Purpose
 
 Today `mockserp` reads its corpus and index from local files (`data/corpus/*.jsonl` → `data/index/`). This change does three things:
 
-1. **Markdown corpus.** The Vietnamese real-estate papers (`data/paper-RE (N).md`, 18 pages, 72 KB) become an ingestible corpus. Each file already has YAML front matter with `url`, `title`, and `published_date` (added 2026-10-06).
+1. **Markdown-only corpus.** The Vietnamese real-estate papers (18 pages, 72 KB) become the corpus, as `data/corpus/*.md`. Each file already has YAML front matter with `url`, `title`, and `published_date` (added 2026-10-06). JSONL corpus input, the English energy demo (`data/corpus/demo.jsonl`), and the `seed` crawler that produced it are removed.
 2. **Index in Supabase.** `ingest` still builds the index locally. A new `publish` command uploads it to a private Supabase Storage bucket. A deployed server downloads the current version at startup and loads new versions without restarting.
 3. **Deployment-ready.** A container image that runs on any container host, configured only through environment variables, with an API key required whenever the server is reachable from outside the machine. Adds a health endpoint and CI.
 
 ### Success criteria
 
-1. `mockserp ingest` with `CORPUS_DIR=data/corpus/realestate` indexes all 18 papers. `mockserp publish` uploads the result.
+1. `mockserp ingest` with the default `CORPUS_DIR` indexes all 18 papers. `mockserp publish` uploads the result.
 2. A container started with `INDEX_SOURCE=supabase` and no local data serves `/search` and `/extract` over that index through the official `tavily-python` client.
 3. After a new `publish`, a running server serves the new version within `INDEX_POLL_SECONDS` without a restart, and `/healthz` reports the new version.
 4. These Vietnamese queries over the real-estate corpus, with real embeddings, return the expected results:
@@ -27,12 +27,13 @@ Today `mockserp` reads its corpus and index from local files (`data/corpus/*.jso
 
 ### Non-goals
 
-- Searching inside Postgres (pgvector or full-text search). The corpus is about 80 pages, and Postgres has no Vietnamese text-search configuration. Ranking stays in Python, unchanged.
+- Searching inside Postgres (pgvector or full-text search). The corpus has 18 pages, and Postgres has no Vietnamese text-search configuration. Ranking stays in Python, unchanged.
 - Editing pages in Supabase. Pages are authored as files; Supabase holds built index versions only.
 - Serving several corpora from one deployment. One deployment serves one published index.
 - Choosing a hosting platform, pushing to a container registry, or infrastructure-as-code.
 - Cleaning Google Docs export escapes (`\-`, `\[1\]`) out of the papers. `raw_content` stays verbatim.
 - Changing the embedding model. `text-embedding-3-small` stays the default. If success criterion 4 fails, model choice gets revisited as a separate change.
+- Crawling real web pages. `seed`, `data/seeds.txt`, and the `trafilatura` dependency are removed; git history keeps them.
 
 ## 2. Decision: Storage bucket, not Postgres tables
 
@@ -46,8 +47,7 @@ Today `mockserp` reads its corpus and index from local files (`data/corpus/*.jso
 
 ```mermaid
 flowchart LR
-  MD[data/corpus/realestate/*.md] --> I[mockserp ingest]
-  JL[*.jsonl] --> I
+  MD[data/corpus/*.md] --> I[mockserp ingest]
   I --> L[(INDEX_DIR)]
   L --> P[mockserp publish]
   P --> B[(Supabase Storage<br/>private bucket)]
@@ -56,22 +56,24 @@ flowchart LR
   S -->|query embedding| E[Embedding API]
 ```
 
-Lifecycle: `seed` (optional) → `ingest` (local build, unchanged) → `publish` (upload a version, move the pointer) → `serve` (loads from `INDEX_DIR` or Supabase; in Supabase mode, keeps polling for new versions).
+Lifecycle: `ingest` (local build, unchanged except for the input format) → `publish` (upload a version, move the pointer) → `serve` (loads from `INDEX_DIR` or Supabase; in Supabase mode, keeps polling for new versions).
 
 ## 4. Components
 
 | Module | Change |
 |---|---|
-| `corpus.py` | `load_corpus` also reads `*.md` (§5). |
-| `index.py` | `tokenize` normalizes Unicode to NFC before lowercasing (§5.3). `build_index` adds `version` to `meta.json` (§6.1). |
+| `corpus.py` | `load_corpus` reads `*.md` instead of `*.jsonl` (§5). The front-matter fields go through the existing `_parse_row` validation. |
+| `index.py` | `tokenize` normalizes Unicode to NFC before lowercasing (§5.3). `build_index` adds `version` to `meta.json` (§6.1). `_corpus_sha256` hashes `*.md`. The index's own `docs.jsonl`/`chunks.jsonl` are unchanged: they are a generated index format, not corpus input. |
+| `seed.py` | Deleted, along with `tests/test_seed.py`, `data/seeds.txt`, and `data/corpus/demo.jsonl`. |
 | `remote.py` (new) | `IndexStore`: publish, read the current pointer, fetch a version, prune old versions. Works against a narrow `Bucket` protocol (`upload`, `download`, `list`, `remove`). `SupabaseBucket` adapts the official `supabase` Python SDK to that protocol. |
 | `live.py` (new) | `LiveIndex`: holds an immutable `(index, version)` snapshot that is swapped atomically. `refresh(store, live, expected_model)` performs one polling step. |
 | `api.py` | `create_app` takes a `LiveIndex` instead of an `Index`. Each request reads the snapshot once. Adds `GET /healthz`. A lifespan task runs the poller when one is configured. |
-| `cli.py` | New `publish` command. `serve` picks the index source and enforces the bind/auth guard. |
+| `cli.py` | Removes `seed`. New `publish` command. `serve` picks the index source and enforces the bind/auth guard. |
 | `config.py` | New settings (§9). |
-| Repo | `Dockerfile`, `.dockerignore`, `.github/workflows/ci.yml`, Makefile targets `publish` and `docker`, README, and `.env.example`. The papers move to `data/corpus/realestate/` and get committed. |
+| `scripts/demo.py` | Its English energy-storage queries are replaced with Vietnamese queries over the papers, including the success criterion 4 cases. |
+| Repo | `Dockerfile`, `.dockerignore`, `.github/workflows/ci.yml`, README, and `.env.example`. Makefile: removes `seed`, adds `publish` and `docker`. The papers move from `data/` to `data/corpus/` and get committed. |
 
-New runtime dependencies: `pyyaml` (front matter) and `supabase` (Storage SDK).
+Dependencies: adds `pyyaml` (front matter) and `supabase` (Storage SDK); removes `trafilatura`.
 
 ## 5. Markdown corpus
 
@@ -88,14 +90,14 @@ published_date: "2026-09-29"
 ```
 
 - The opening `---` must be the file's first line. The front matter ends at the next line that is exactly `---`. It must parse with `yaml.safe_load` to a mapping.
-- Field rules match JSONL rows: `url` (absolute http(s) URL, unique across the whole corpus) and `title` are required; `published_date` and `favicon` are optional; other keys are ignored. YAML may parse an unquoted date as a `date` or `datetime`; these are turned into ISO strings before `parse_date`.
+- Field rules: `url` (absolute http(s) URL, unique across the whole corpus) and `title` (non-empty) are required; `published_date` (ISO 8601 or RFC 1123) and `favicon` are optional; other keys are ignored. YAML may parse an unquoted date as a `date` or `datetime`; these are turned into ISO strings before `parse_date`.
 - `raw_content` is the text after the closing `---`, with leading blank lines removed, and must not be empty. The H1 stays in `raw_content`, as on a real web page.
 - A file without front matter is an error. The title is never guessed from the H1.
-- Errors name the file (`paper-RE (3).md: url must be an absolute http(s) URL, got None`). They use the same `CorpusError` path as JSONL, so `ingest` exits non-zero and the previous index survives.
+- Errors name the file (`paper-RE (3).md: url must be an absolute http(s) URL, got None`) and raise `CorpusError`, so `ingest` exits non-zero and the previous index survives.
 
 ### 5.2 Discovery
 
-`load_corpus(corpus_dir)` loads `*.jsonl` (one page per line) and `*.md` (one page per file) directly inside `corpus_dir`, without recursing, in sorted filename order. Duplicate-URL detection covers both formats. Because the search is non-recursive, `CORPUS_DIR=data/corpus` keeps loading only the English demo, and `CORPUS_DIR=data/corpus/realestate` loads only the papers.
+`load_corpus(corpus_dir)` loads every `*.md` directly inside `corpus_dir` (no recursion), one page per file, in sorted filename order, and rejects duplicate URLs across files. A `.jsonl` file in the directory is ignored like any other non-`.md` file. An empty result is an error: "no documents found in <dir>/*.md".
 
 ### 5.3 Unicode
 
@@ -134,7 +136,7 @@ current.json        {"version": "<version>", "embedding_model": "...", "publishe
 5. Prune: keep the current version and the `--keep − 1` newest versions named before it (`--keep` defaults to 3), and delete every older version. Versions named after the current one are left alone, because another publish may be uploading them. A prune failure prints a warning; the publish still succeeds.
 6. Print `published <version> (<n_docs> docs, <n_chunks> chunks)`.
 
-If an upload fails in steps 2–4, `publish` exits non-zero and `current.json` is unchanged. On a failure in step 3, `publish` makes a best-effort deletion of the objects it already uploaded for that version, so a partial version can't take a retention slot. Files above the project's Storage size limit (50 MB on the Free plan) fail with Storage's error message passed through. The real-estate index is about 1–2 MB; the English demo's `embeddings.npy` is 30 MB.
+If an upload fails in steps 2–4, `publish` exits non-zero and `current.json` is unchanged. On a failure in step 3, `publish` makes a best-effort deletion of the objects it already uploaded for that version, so a partial version can't take a retention slot. Files above the project's Storage size limit (50 MB on the Free plan) fail with Storage's error message passed through. The real-estate index is about 1–2 MB.
 
 ## 7. Serving
 
@@ -180,7 +182,7 @@ On push and pull request: `uv sync --frozen` → `ruff check` + `ruff format --c
 
 ### 8.3 Makefile
 
-Adds `publish` (`uv run mockserp publish`) and `docker` (`docker build -t mockserp .`).
+Removes `seed`. Adds `publish` (`uv run mockserp publish`) and `docker` (`docker build -t mockserp .`). `demo` stays.
 
 ## 9. Configuration
 
@@ -195,6 +197,8 @@ Additions to `Settings` and `.env.example`. `.env`-over-shell precedence is unch
 | `INDEX_POLL_SECONDS` | `60` | `serve` (supabase); `0` disables polling |
 
 `publish` and `serve` with `INDEX_SOURCE=supabase` exit 1 with a message naming each missing variable when `SUPABASE_URL` or `SUPABASE_SECRET_KEY` is unset.
+
+`SUPABASE_URL` must be the project base URL (`https://<ref>.supabase.co`). A value with a path, such as `https://<ref>.supabase.co/rest/v1/`, fails settings validation with a message showing the corrected base URL. With the path, Storage calls reach the database REST endpoint and fail with 404 `PGRST125` (observed 2026-10-06). A trailing `/` alone is accepted.
 
 Deployment environment (set in the platform's secret store): `INDEX_SOURCE=supabase` (set by the image), `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `EMBEDDING_API_KEY`, `EMBEDDING_BASE_URL` / `EMBEDDING_MODEL` if not the defaults, and `MOCK_API_KEY`.
 
@@ -219,7 +223,7 @@ Deployment environment (set in the platform's secret store): `INDEX_SOURCE=supab
 
 Offline (`make test`), following the existing conventions (`HashEmbedder`, `tmp_path` corpora):
 
-- **Markdown loader:** valid file → `Document` with `raw_content` starting at the H1; missing front matter, unterminated front matter, non-mapping YAML, missing `url`, and empty body are each rejected with the filename; an unquoted YAML date is accepted; a duplicate URL across `.md` and `.jsonl` is rejected; a mixed directory loads both formats.
+- **Markdown loader:** valid file → `Document` with `raw_content` starting at the H1; missing front matter, unterminated front matter, non-mapping YAML, missing `url`, and empty body are each rejected with the filename; an unquoted YAML date is accepted; a duplicate URL across two `.md` files is rejected; a `.jsonl` file in the directory is not loaded.
 - **NFC:** an NFD-encoded query matches an NFC document through BM25 and `exact_match`.
 - **`IndexStore`** against an in-memory fake `Bucket`:
   - Publish writes the version files before the pointer.
@@ -231,11 +235,11 @@ Offline (`make test`), following the existing conventions (`HashEmbedder`, `tmp_
   - The same version is a no-op.
   - A failed download, a load error, or a model mismatch keeps the old snapshot.
 - **API:** `/healthz` without auth reports the version. After a swap, `/search` serves the new index's documents.
-- **CLI:** non-loopback host without `MOCK_API_KEY` exits 1; `INDEX_SOURCE=supabase` without credentials exits 1 naming the variables; `publish` rejects an index without `version`.
-- Existing tests that construct `create_app(index, …)` move to `LiveIndex`.
+- **CLI:** non-loopback host without `MOCK_API_KEY` exits 1; `INDEX_SOURCE=supabase` without credentials exits 1 naming the variables; `SUPABASE_URL` with a path is rejected with the corrected base URL; `publish` rejects an index without `version`.
+- Existing tests that construct `create_app(index, …)` move to `LiveIndex`. Existing tests that write JSONL corpora (`conftest.write_corpus`, `test_corpus.py`, `test_cli.py`, `test_index.py`) switch to `.md` files; JSONL-specific cases (per-line error locations, blank lines) are deleted.
 
 Manual smoke checks (need a Supabase project or a local `supabase start` stack, plus an embedding key):
 
 1. SDK probe from §11.
-2. `CORPUS_DIR=data/corpus/realestate make ingest && make publish`, then the success criterion 4 queries through `tavily-python` against a `docker run` container with `INDEX_SOURCE=supabase`.
+2. `make ingest && make publish`, then the success criterion 4 queries through `tavily-python` against a `docker run` container with `INDEX_SOURCE=supabase`.
 3. Re-ingest after editing one paper, `make publish`, and watch `/healthz` change version within `INDEX_POLL_SECONDS` without a restart.

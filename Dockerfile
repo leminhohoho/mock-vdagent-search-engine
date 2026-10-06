@@ -13,6 +13,8 @@ FROM python:3.12-slim-bookworm
 RUN useradd --system --uid 10001 --no-create-home mockserp
 COPY --from=build /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH HOST=0.0.0.0 PORT=8000 PYTHONUNBUFFERED=1
+# Pin "now" so time_range filters give the same results on any day; override with -e MOCK_NOW=...
+ENV MOCK_NOW=2026-10-06T00:00:00Z
 WORKDIR /app
 USER mockserp
 EXPOSE 8000

@@ -175,6 +175,17 @@ def test_unknown_and_ignored_parameters_are_accepted(client):
     assert r["answer"] is None and r["images"] == [] and r["results"]
 
 
+def test_min_score_filters_results_through_the_sdk(client):
+    unfiltered = client.search("battery storage", max_results=20)["results"]
+    scores = [x["score"] for x in unfiltered]
+    threshold = (max(scores) + min(scores)) / 2
+    r = client.search("battery storage", max_results=20, min_score=threshold)
+    assert [x["url"] for x in r["results"]] == [
+        x["url"] for x in unfiltered if x["score"] >= threshold
+    ]
+    assert 0 < len(r["results"]) < len(unfiltered)
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -184,6 +195,8 @@ def test_unknown_and_ignored_parameters_are_accepted(client):
         {"time_range": "decade"},
         {"start_date": "2025/01/01"},
         {"include_domains_mode": "prefer"},
+        {"min_score": 1.5},
+        {"min_score": -0.1},
     ],
 )
 def test_invalid_search_parameters_raise_bad_request(client, kwargs):

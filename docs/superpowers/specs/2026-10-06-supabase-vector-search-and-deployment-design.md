@@ -177,7 +177,8 @@ mockserp.search(
   window_start     timestamptz,   -- null = open
   window_end       timestamptz,
   drop_undated     boolean,       -- filter_by_published_date
-  phrases          text[]         -- each = join(tokenize(quoted phrase), ' '); empty unless exact_match
+  phrases          text[],        -- each = join(tokenize(quoted phrase), ' '); empty unless exact_match
+  min_score        double precision default null  -- request `min_score` (0..1); null = no threshold
 ) returns table (url text, title text, raw_content text, published_date timestamptz,
                  favicon text, score double precision, snippets text[])
 language plpgsql stable set search_path = mockserp, extensions, pg_catalog
@@ -191,10 +192,11 @@ Semantics, in order:
    - The exclude filter always applies and wins.
    - Date window: when `window_start` or `window_end` is set, undated documents are dropped only if `drop_undated`; dated documents outside `[window_start, window_end]` are dropped.
    - Phrases: every `p` in `phrases` must satisfy `strpos(search_tokens, ' ' || p || ' ') > 0`.
-3. **Chunk similarity.** For every chunk of an allowed document: `sim = 1 - (embedding <=> query)` (cosine). It's an exact scan, with no candidate cutoff and no relevance threshold.
+3. **Chunk similarity.** For every chunk of an allowed document: `sim = 1 - (embedding <=> query)` (cosine). It's an exact scan, with no candidate cutoff.
 4. **Roll-up.**
    - Document score = max `sim` over its chunks.
    - Snippets = the texts of its top `chunks_per_source` chunks, ordered by `(sim desc, ord asc)`.
+   - **Threshold** (added 2026-10-06, migration `20261006120000_search_min_score.sql`): when `min_score` is set, documents with `greatest(score, 0) < min_score` are dropped here, before ordering and the cut. Snippets are not filtered.
 5. **Order and cut.** Sort documents by `(prefer_domains and host matches include_domains) desc, score desc, url asc`, then `limit max_results`.
 6. **`score`** = `greatest(document score, 0)`, so it falls in [0, 1]. It's a raw cosine similarity, so absolute values are lower than the old fused scores. Typical values for `text-embedding-3-small` are 0.2–0.7 [INFERENCE].
 

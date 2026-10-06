@@ -71,6 +71,8 @@ published_date: "2026-09-20"
 
 `score` is the cosine similarity of the page's best chunk to the query, clamped to [0, 1]. Ranking is vector-only; there is no keyword (BM25) signal, so use `exact_match` when an exact figure or name must appear.
 
+`min_score` (0–1, `/search` only) is a mockserp extension that real Tavily doesn't have: pages whose `score` is below it are dropped in SQL before ordering and the `max_results` cut, so a search can return fewer results, or none. Leave it out for no threshold. With the Python SDK: `client.search("...", min_score=0.5)`. On the bundled papers, good matches score about 0.55–0.65.
+
 Errors use Tavily's `{"detail": {"error": "..."}}` shape: 400 for invalid input, 401 for a wrong key, 500 if the embedding backend or the database is down, or if the database was ingested with a different embedding model. `/crawl`, `/map` and `/research` are not implemented.
 
 `GET /healthz` (no auth) returns `200 {"status": "ok", "index_version", "embedding_model", "n_docs"}`, or 503 when the database is unreachable or empty. Use it as a readiness check, not a liveness check.

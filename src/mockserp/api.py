@@ -42,6 +42,8 @@ class SearchRequest(_Request):
     include_published_date: bool = False
     filter_by_published_date: bool = False
     exact_match: bool = False
+    # mockserp extension (not in Tavily): drop results whose score is below this.
+    min_score: float | None = Field(None, ge=0, le=1)
     include_raw_content: bool | Literal["markdown", "text"] = False
     include_favicon: bool = False
     include_usage: bool = False
@@ -163,6 +165,7 @@ def create_app(store: Store, embedder: Embedder, settings: Settings) -> FastAPI:
                 end=end,
                 drop_undated=req.filter_by_published_date,
                 exact_match=req.exact_match,
+                min_score=req.min_score,
             ),
         )
 

@@ -170,6 +170,41 @@ def test_prefer_mode_ranks_included_domains_first_without_dropping_others(db):
     assert got[1:] == [u for u, _, _ in expected("lithium battery storage") if u != NOT["url"]]
 
 
+# --- similarity threshold ------------------------------------------------------------------------
+
+
+def test_min_score_drops_documents_scoring_below_it(db):
+    query = "battery storage cost"
+    params = SearchParams(query=query, max_results=20, min_score=0.15)
+    got = search(db, EMB, params)
+    assert urls(got) == [u for u, s, _ in expected(query) if s >= 0.15]
+    assert urls(got) == [BAT["url"], NOT["url"], ZEN["url"]]
+
+
+def test_min_score_is_inclusive(db):
+    # Several documents share no token with the query and score exactly 0.
+    params = SearchParams(query="battery storage cost", max_results=20, min_score=0.0)
+    rows = search(db, EMB, params)
+    assert len(rows) == len(DOCS) and rows[-1].score == 0
+
+
+def test_min_score_applies_before_preference_and_cutoff(db):
+    # The preferred pumped-hydro page scores ~0.13: below the threshold it must not take the slot.
+    params = SearchParams(
+        query="battery storage cost",
+        include_domains=["blog.energy.example"],
+        prefer_domains=True,
+        max_results=1,
+    )
+    assert urls(search(db, EMB, params)) == [BLOG["url"]]
+    params.min_score = 0.15
+    assert urls(search(db, EMB, params)) == [BAT["url"]]
+
+
+def test_min_score_above_every_score_returns_nothing(db):
+    assert search(db, EMB, SearchParams(query="battery storage cost", min_score=0.99)) == []
+
+
 # --- date window -------------------------------------------------------------------------------
 
 

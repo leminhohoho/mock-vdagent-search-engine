@@ -195,6 +195,7 @@ class Store:
         window_end: datetime | None,
         drop_undated: bool,
         phrases: list[str],
+        min_score: float | None = None,
     ) -> list[SearchRow]:
         with self._connection() as conn:
             rows = conn.execute(
@@ -202,7 +203,8 @@ class Store:
                 " from mockserp.search(query_embedding => %s, embedding_model => %s,"
                 " max_results => %s, chunks_per_source => %s, include_domains => %s::text[],"
                 " exclude_domains => %s::text[], prefer_domains => %s, window_start => %s,"
-                " window_end => %s, drop_undated => %s, phrases => %s::text[])",
+                " window_end => %s, drop_undated => %s, phrases => %s::text[],"
+                " min_score => %s)",
                 [
                     vector_literal(query_embedding),
                     embedding_model,
@@ -215,6 +217,7 @@ class Store:
                     window_end,
                     drop_undated,
                     phrases,
+                    min_score,
                 ],
             ).fetchall()
         return [SearchRow(*row) for row in rows]

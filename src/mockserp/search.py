@@ -30,6 +30,7 @@ class SearchParams:
     end: datetime | None = None
     drop_undated: bool = False
     exact_match: bool = False
+    min_score: float | None = None  # drop results whose score is below this
 
 
 def _parse_day(raw: str, name: str) -> date:
@@ -91,4 +92,5 @@ def search(store: Store, embedder: Embedder, p: SearchParams) -> list[SearchRow]
         window_end=p.end,
         drop_undated=p.drop_undated,
         phrases=quoted_phrases(p.query) if p.exact_match else [],
+        min_score=p.min_score,
     )

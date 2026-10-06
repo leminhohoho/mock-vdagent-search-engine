@@ -36,9 +36,9 @@ def test_serve_refuses_index_built_with_another_embedding_model(workdir, capsys)
 
 def test_ingest_reports_corpus_error_location(workdir, capsys):
     (workdir / "data" / "corpus").mkdir(parents=True)
-    (workdir / "data" / "corpus" / "bad.jsonl").write_text('{"url": "https://a.example/"}\n')
+    (workdir / "data" / "corpus" / "bad.md").write_text('---\nurl: "https://a.example/"\n---\nB\n')
     assert main(["ingest"]) == 1
-    assert "bad.jsonl:1" in capsys.readouterr().err
+    assert "bad.md: title" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("command", ["ingest", "serve"])

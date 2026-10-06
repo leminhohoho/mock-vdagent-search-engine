@@ -1,9 +1,9 @@
 import hashlib
-import json
 import re
 
 import numpy as np
 import pytest
+import yaml
 
 from mockserp.embedder import l2_normalize
 
@@ -42,8 +42,12 @@ def para(text: str) -> str:
 
 
 def write_corpus(directory, rows) -> None:
+    """Write each row as `NN.md`: YAML front matter (all keys but raw_content), then the body."""
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "corpus.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    for i, row in enumerate(rows):
+        meta = {k: v for k, v in row.items() if k != "raw_content"}
+        front = yaml.safe_dump(meta, allow_unicode=True, sort_keys=False)
+        (directory / f"{i:02d}.md").write_text(f"---\n{front}---\n{row['raw_content']}")
 
 
 @pytest.fixture

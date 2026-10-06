@@ -1,10 +1,7 @@
-.PHONY: install seed ingest serve test lint fmt demo
+.PHONY: install ingest serve test lint fmt demo
 
 install:
 	uv sync
-
-seed:
-	uv run mockserp seed
 
 ingest:
 	uv run mockserp ingest

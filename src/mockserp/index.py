@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import re
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -13,10 +12,8 @@ import numpy as np
 
 from .bm25 import BM25
 from .chunker import chunk
-from .corpus import Document, load_corpus, normalize_url, parse_date
+from .corpus import Document, load_corpus, normalize_url, parse_date, tokenize
 from .embedder import Embedder
-
-_TOKEN = re.compile(r"\w+")
 
 
 class IndexLoadError(RuntimeError):
@@ -28,10 +25,6 @@ class Chunk:
     doc_id: int
     ord: int
     text: str
-
-
-def tokenize(text: str) -> list[str]:
-    return _TOKEN.findall(text.lower())
 
 
 def indexed_text(doc: Document, chunk_text: str) -> str:

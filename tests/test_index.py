@@ -71,7 +71,7 @@ def test_failed_rebuild_leaves_previous_index_untouched(tmp_path, failure):
     if failure == "embedder":
         embedder, err = Boom(), EmbeddingError
     else:
-        (tmp_path / "corpus" / "corpus.jsonl").write_text('{"url": "nope"}\n')
+        (tmp_path / "corpus" / "00.md").write_text('---\nurl: "nope"\n---\nB\n')
         embedder, err = HashEmbedder(), CorpusError
     with pytest.raises(err):
         build_index(tmp_path / "corpus", tmp_path / "index", embedder)

@@ -1,9 +1,16 @@
-import json
+import unicodedata
 from datetime import UTC, datetime
 
 import pytest
 
-from mockserp.corpus import CorpusError, format_date, load_corpus, normalize_url, parse_date
+from mockserp.corpus import (
+    CorpusError,
+    format_date,
+    load_corpus,
+    normalize_url,
+    parse_date,
+    tokenize,
+)
 
 
 @pytest.mark.parametrize(
@@ -44,69 +51,98 @@ def test_format_date_is_rfc1123_gmt():
     assert format_date(datetime(2024, 5, 14, tzinfo=UTC)) == "Tue, 14 May 2024 00:00:00 GMT"
 
 
-def _write(path, rows):
-    path.write_text("\n".join(r if isinstance(r, str) else json.dumps(r) for r in rows) + "\n")
+FRONT = """---
+url: "https://www.energy.gov/storage"
+title: "Storage"
+published_date: "2024-05-14"
+favicon: "https://www.energy.gov/favicon.ico"
+ignored_key: 1
+---
+
+"""
+BODY = "# **Storage**\n\nBatteries store energy.\n"
 
 
-DOC = {
-    "url": "https://www.energy.gov/storage",
-    "title": "Storage",
-    "raw_content": "Batteries.",
-    "published_date": "2024-05-14",
-    "favicon": "https://www.energy.gov/favicon.ico",
-}
-
-
-def test_load_corpus_reads_all_jsonl_files_in_name_order(tmp_path):
-    _write(tmp_path / "b.jsonl", [{**DOC, "url": "https://b.example/x"}])
-    _write(
-        tmp_path / "a.jsonl",
-        [DOC, "", {"url": "https://a.example/", "title": "T", "raw_content": "C"}],
-    )
-    docs = load_corpus(tmp_path)
-    assert [d.url for d in docs] == [
+def test_markdown_file_becomes_document_with_body_starting_at_h1(tmp_path):
+    (tmp_path / "paper.md").write_text(FRONT + BODY, encoding="utf-8")
+    (doc,) = load_corpus(tmp_path)
+    assert (doc.url, doc.title, doc.favicon) == (
         "https://www.energy.gov/storage",
-        "https://a.example/",
-        "https://b.example/x",
-    ]
-    first = docs[0]
-    assert (first.title, first.raw_content, first.favicon) == (
         "Storage",
-        "Batteries.",
-        DOC["favicon"],
+        "https://www.energy.gov/favicon.ico",
     )
-    assert first.published_date == datetime(2024, 5, 14, tzinfo=UTC)
-    assert first.host == "www.energy.gov"
-    assert docs[1].published_date is None and docs[1].favicon is None
+    assert doc.raw_content == BODY
+    assert doc.published_date == datetime(2024, 5, 14, tzinfo=UTC)
+
+
+def test_files_load_in_sorted_name_order_and_other_files_are_ignored(tmp_path):
+    for name in ("b.md", "a.md"):
+        (tmp_path / name).write_text(
+            f'---\nurl: "https://{name}.example/"\ntitle: "{name}"\n---\nBody {name}\n'
+        )
+    (tmp_path / "notes.txt").write_text("not a page")
+    (tmp_path / "old.jsonl").write_text('{"url": "https://x.example/"}\n')
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "c.md").write_text('---\nurl: "https://c.example/"\ntitle: c\n---\nC\n')
+    docs = load_corpus(tmp_path)
+    assert [d.title for d in docs] == ["a.md", "b.md"]
+    assert docs[0].published_date is None and docs[0].favicon is None
+
+
+def test_unquoted_yaml_date_is_accepted(tmp_path):
+    (tmp_path / "p.md").write_text(
+        "---\nurl: https://a.example/\ntitle: T\npublished_date: 2026-09-29\n---\nBody\n"
+    )
+    assert load_corpus(tmp_path)[0].published_date == datetime(2026, 9, 29, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(
-    ("row", "reason"),
+    ("text", "reason"),
     [
-        ({**DOC, "title": "  "}, "title"),
-        ({k: v for k, v in DOC.items() if k != "raw_content"}, "raw_content"),
-        ({**DOC, "url": "ftp://x.example/a"}, "url"),
-        ({**DOC, "url": "/relative"}, "url"),
-        ({**DOC, "published_date": "soon"}, "published_date"),
-        ("{not json", "JSON"),
+        ("# No front matter\nBody\n", "front matter"),
+        ("\n---\nurl: https://a.example/\ntitle: T\n---\nBody\n", "front matter"),
+        ('---\nurl: "https://a.example/"\ntitle: T\nBody without closing marker\n', "front matter"),
+        ("---\n- a list\n- not a mapping\n---\nBody\n", "mapping"),
+        ("---\nurl: [unclosed\n---\nBody\n", "YAML"),
+        ("---\ntitle: T\n---\nBody\n", "url must be an absolute http(s) URL, got None"),
+        ('---\nurl: "https://a.example/"\ntitle: "  "\n---\nBody\n', "title"),
+        ('---\nurl: "https://a.example/"\ntitle: T\n---\n\n\n   \n', "raw_content"),
+        (
+            '---\nurl: "https://a.example/"\ntitle: T\npublished_date: soon\n---\nB\n',
+            "published_date",
+        ),
     ],
 )
-def test_load_corpus_reports_file_and_line_of_bad_rows(tmp_path, row, reason):
-    _write(tmp_path / "c.jsonl", [{**DOC, "url": "https://ok.example/"}, row])
+def test_invalid_markdown_file_is_rejected_with_its_name(tmp_path, text, reason):
+    (tmp_path / "paper-RE (3).md").write_text(text)
     with pytest.raises(CorpusError) as e:
         load_corpus(tmp_path)
-    assert "c.jsonl:2" in str(e.value)
+    assert str(e.value).startswith("paper-RE (3).md: ")
     assert reason in str(e.value)
 
 
-def test_load_corpus_rejects_duplicate_normalized_urls_across_files(tmp_path):
-    _write(tmp_path / "a.jsonl", [{**DOC, "url": "https://Example.com/page/"}])
-    _write(tmp_path / "b.jsonl", [{**DOC, "url": "https://example.com/page#top"}])
+def test_duplicate_normalized_urls_across_files_are_rejected(tmp_path):
+    (tmp_path / "a.md").write_text('---\nurl: "https://Example.com/page/"\ntitle: A\n---\nA\n')
+    (tmp_path / "b.md").write_text('---\nurl: "https://example.com/page#top"\ntitle: B\n---\nB\n')
     with pytest.raises(CorpusError) as e:
         load_corpus(tmp_path)
-    assert "b.jsonl:1" in str(e.value) and "duplicate" in str(e.value)
+    assert (
+        str(e.value).startswith("b.md: ") and "duplicate" in str(e.value) and "a.md" in str(e.value)
+    )
 
 
-def test_load_corpus_requires_at_least_one_document(tmp_path):
-    with pytest.raises(CorpusError):
+def test_empty_corpus_directory_is_an_error(tmp_path):
+    (tmp_path / "readme.txt").write_text("x")
+    with pytest.raises(CorpusError, match=r"no documents found in .*/\*\.md"):
         load_corpus(tmp_path)
+
+
+def test_tokenize_lowercases_and_splits_on_non_word_characters():
+    assert tokenize("Giá thuê 64,7 USD/m²") == ["giá", "thuê", "64", "7", "usd", "m²"]
+
+
+def test_tokenize_treats_decomposed_and_composed_text_alike():
+    composed = unicodedata.normalize("NFC", "Nhà ở xã hội")
+    decomposed = unicodedata.normalize("NFD", composed)
+    assert decomposed != composed
+    assert tokenize(decomposed) == tokenize(composed) == ["nhà", "ở", "xã", "hội"]

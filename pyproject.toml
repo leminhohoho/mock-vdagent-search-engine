@@ -8,11 +8,12 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.142.2",
-    "httpx>=0.28.1",
     "numpy>=2.5.3",
     "openai>=3.22.1",
+    "psycopg-pool>=3.3.3",
+    "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.15.0",
-    "trafilatura>=2.2.0",
+    "pyyaml>=6.0.3",
     "uvicorn>=0.54.0",
 ]
 
@@ -25,6 +26,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.1.1",
     "ruff>=0.16.9",
     "tavily-python>=0.8.4",

@@ -1,11 +1,21 @@
 import hashlib
+import os
 import re
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
 
 import numpy as np
+import psycopg
 import pytest
 import yaml
+from psycopg.conninfo import make_conninfo
 
+from mockserp.db import Store
 from mockserp.embedder import l2_normalize
+
+MIGRATIONS = Path(__file__).resolve().parent.parent / "supabase" / "migrations"
 
 
 class HashEmbedder:
@@ -53,3 +63,66 @@ def write_corpus(directory, rows) -> None:
 @pytest.fixture
 def hash_embedder():
     return HashEmbedder()
+
+
+# --- database ----------------------------------------------------------------------------------
+# Database tests need TEST_DATABASE_URL (a pgvector Postgres, e.g. `make db-up`); each session
+# works in throwaway databases created next to it. MOCKSERP_REQUIRE_DB=1 turns a skip into a fail.
+
+
+@pytest.fixture(scope="session")
+def admin_url() -> str:
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        if os.environ.get("MOCKSERP_REQUIRE_DB") == "1":
+            pytest.fail("MOCKSERP_REQUIRE_DB=1 but TEST_DATABASE_URL is not set")
+        pytest.skip("TEST_DATABASE_URL not set")
+    return url
+
+
+def apply_migrations(url: str) -> None:
+    with psycopg.connect(url, autocommit=True) as conn:
+        for path in sorted(MIGRATIONS.glob("*.sql")):
+            conn.execute(path.read_text())
+
+
+@contextmanager
+def scratch_database(admin_url: str, *, migrate: bool) -> Iterator[str]:
+    name = f"mockserp_test_{uuid.uuid4().hex[:12]}"
+    with psycopg.connect(admin_url, autocommit=True) as conn:
+        conn.execute(f'create database "{name}"')
+    url = make_conninfo(admin_url, dbname=name)
+    try:
+        if migrate:
+            apply_migrations(url)
+        yield url
+    finally:
+        with psycopg.connect(admin_url, autocommit=True) as conn:
+            conn.execute(f'drop database if exists "{name}" with (force)')
+
+
+@pytest.fixture(scope="session")
+def db_url(admin_url) -> Iterator[str]:
+    """A migrated database shared by the session; modules re-ingest the corpus they need."""
+    with scratch_database(admin_url, migrate=True) as url:
+        yield url
+
+
+@pytest.fixture
+def fresh_db_url(admin_url) -> Iterator[str]:
+    """A migrated database with nothing ingested."""
+    with scratch_database(admin_url, migrate=True) as url:
+        yield url
+
+
+@pytest.fixture
+def unmigrated_db_url(admin_url) -> Iterator[str]:
+    with scratch_database(admin_url, migrate=False) as url:
+        yield url
+
+
+@pytest.fixture(scope="session")
+def store(db_url) -> Iterator[Store]:
+    s = Store(db_url)
+    yield s
+    s.close()

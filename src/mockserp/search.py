@@ -69,7 +69,8 @@ def resolve_window(
     return (max(starts) if starts else None), end
 
 
-def _domain(raw: str) -> str:
+def normalize_domain(raw: str) -> str:
+    """Lowercased host of a domain or URL, without a leading "www." or trailing "."."""
     raw = raw.strip().lower()
     if "://" in raw:
         raw = urlsplit(raw).hostname or ""
@@ -77,8 +78,8 @@ def _domain(raw: str) -> str:
 
 
 def _host_matches(host: str, domains: list[str]) -> bool:
-    host = _domain(host)
-    return any(host == d or host.endswith("." + d) for d in map(_domain, domains) if d)
+    host = normalize_domain(host)
+    return any(host == d or host.endswith("." + d) for d in map(normalize_domain, domains) if d)
 
 
 def _contains(tokens: list[str], phrase: list[str]) -> bool:

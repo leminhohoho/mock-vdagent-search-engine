@@ -13,10 +13,6 @@ dist/
 # Secrets
 .env
 
-# Built search index (rebuild with `make ingest`)
-data/index/
-data/.index-*/
-
 # OS / editors
 .DS_Store
 .idea/

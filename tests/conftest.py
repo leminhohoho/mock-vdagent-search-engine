@@ -18,10 +18,13 @@ from mockserp.embedder import l2_normalize
 MIGRATIONS = Path(__file__).resolve().parent.parent / "supabase" / "migrations"
 
 
-class HashEmbedder:
-    """Deterministic offline bag-of-words embedder (test utility)."""
+PADDING = "filler"
 
-    def __init__(self, dim: int = 64, model: str = "hash-test"):
+
+class HashEmbedder:
+    """Deterministic offline bag-of-words embedder (test utility); ignores `para` padding."""
+
+    def __init__(self, dim: int = 256, model: str = "hash-test"):
         self.dim = dim
         self.model = model
 
@@ -29,6 +32,8 @@ class HashEmbedder:
         out = np.zeros((len(texts), self.dim), dtype=np.float32)
         for i, text in enumerate(texts):
             for tok in re.findall(r"\w+", text.lower()):
+                if tok == PADDING:
+                    continue
                 h = int.from_bytes(hashlib.sha1(tok.encode()).digest()[:4], "big")
                 out[i, h % self.dim] += 1.0
             if not out[i].any():
@@ -48,7 +53,7 @@ class RecordingEmbedder(HashEmbedder):
 
 def para(text: str) -> str:
     """One sentence unit of ~300 chars (no inner sentence breaks), so two never share a chunk."""
-    return text.rstrip(".") + " " + " ".join(["filler"] * ((300 - len(text)) // 7 + 1)) + "."
+    return text.rstrip(".") + " " + " ".join([PADDING] * ((300 - len(text)) // 7 + 1)) + "."
 
 
 def write_corpus(directory, rows) -> None:

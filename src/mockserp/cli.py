@@ -7,8 +7,11 @@ import openai
 
 from .config import Settings
 from .corpus import CorpusError
+from .db import NotMigrated, Store, StoreError
 from .embedder import EmbeddingError, OpenAIEmbedder
-from .index import Index, IndexLoadError, build_index
+from .ingest import prepare
+
+_LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
 
 class StartupError(RuntimeError):
@@ -22,45 +25,83 @@ def _embedder(settings: Settings) -> OpenAIEmbedder:
     return OpenAIEmbedder(client, settings.embedding_model, settings.embedding_batch_size)
 
 
+def _database_url(settings: Settings) -> str:
+    if not settings.database_url:
+        raise StartupError(
+            "set DATABASE_URL (Supabase session pooler connection string) in the environment"
+            " or .env"
+        )
+    return settings.database_url
+
+
+def _store(database_url: str, max_size: int) -> Store:
+    try:
+        return Store(database_url, max_size=max_size)
+    except StoreError as e:
+        raise StartupError(f"DATABASE_URL: {e}") from e
+
+
 def _ingest(settings: Settings) -> None:
+    database_url = _database_url(settings)
     embedder = _embedder(settings)
     try:
-        meta = build_index(settings.corpus_dir, settings.index_dir, embedder)
+        records, meta = prepare(settings.corpus_dir, embedder)
     except (CorpusError, EmbeddingError) as e:
         raise StartupError(f"ingest failed: {e}") from e
+    store = _store(database_url, max_size=1)
+    try:
+        store.replace_corpus(records, meta)
+    except StoreError as e:
+        raise StartupError(f"ingest failed: {e}") from e
+    finally:
+        store.close()
     print(
-        f"indexed {meta['n_docs']} documents / {meta['n_chunks']} chunks "
-        f"({meta['embedding_model']}, dim {meta['dim']}) -> {settings.index_dir}"
+        f"ingested {meta.n_docs} documents / {meta.n_chunks} chunks "
+        f"({meta.embedding_model}, dim {meta.dim}) version {meta.version}"
     )
 
 
-def _serve(settings: Settings) -> None:
-    embedder = _embedder(settings)
+def _check_index(store: Store, settings: Settings) -> None:
     try:
-        index = Index.load(settings.index_dir)
-    except IndexLoadError as e:
+        meta = store.meta()
+    except NotMigrated as e:
         raise StartupError(
-            f"{e}\nno usable index at {settings.index_dir}; run `make ingest`"
+            f'database not migrated; run `supabase db push --db-url "$DATABASE_URL"` ({e})'
         ) from e
-    built_with = index.meta.get("embedding_model")
-    if built_with != settings.embedding_model:
+    except StoreError as e:
+        raise StartupError(f"cannot read the index from the database: {e}") from e
+    if meta is None:
+        raise StartupError("nothing ingested; run `mockserp ingest`")
+    if meta.embedding_model != settings.embedding_model:
         raise StartupError(
-            f"index was built with embedding model {built_with!r} but EMBEDDING_MODEL is "
-            f"{settings.embedding_model!r}; run `make ingest` or change EMBEDDING_MODEL"
+            f"index was built with embedding model {meta.embedding_model!r} but EMBEDDING_MODEL "
+            f"is {settings.embedding_model!r}; run `mockserp ingest` or change EMBEDDING_MODEL"
         )
 
-    import uvicorn
 
-    from .api import create_app
+def _serve(settings: Settings) -> None:
+    database_url = _database_url(settings)
+    if not settings.mock_api_key and settings.host not in _LOOPBACK:
+        raise StartupError(f"refusing to serve on {settings.host} without MOCK_API_KEY")
+    embedder = _embedder(settings)
+    store = _store(database_url, max_size=settings.db_pool_size)
+    try:
+        _check_index(store, settings)
 
-    print(f"serving {len(index.docs)} documents on http://{settings.host}:{settings.port}")
-    uvicorn.run(create_app(index, embedder, settings), host=settings.host, port=settings.port)
+        import uvicorn
+
+        from .api import create_app
+
+        print(f"serving on http://{settings.host}:{settings.port}")
+        uvicorn.run(create_app(store, embedder, settings), host=settings.host, port=settings.port)
+    finally:
+        store.close()
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="mockserp", description="Mock Tavily search engine")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("ingest", help="build the search index from CORPUS_DIR into INDEX_DIR")
+    sub.add_parser("ingest", help="load CORPUS_DIR/*.md into the database (replaces the corpus)")
     sub.add_parser("serve", help="serve the Tavily-compatible API")
     args = parser.parse_args(argv)
 

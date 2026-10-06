@@ -1,18 +1,14 @@
-"""Hybrid retrieval: filters → BM25 + vector candidates → RRF → one result per document."""
+"""Search parameters and their normalization; ranking runs in SQL (`mockserp.search`)."""
 
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from urllib.parse import urlsplit
 
-import numpy as np
-
+from .corpus import tokenize
+from .db import SearchRow, Store
 from .embedder import Embedder
-from .index import Index, tokenize
 
-CANDIDATES = 50
-RRF_K = 60
-_MAX_RRF = 2 / (RRF_K + 1)
 _TIME_RANGES = {"day": 1, "d": 1, "week": 7, "w": 7, "month": 30, "m": 30, "year": 365, "y": 365}
 _QUOTED = re.compile(r'"([^"]+)"')
 _YMD = re.compile(r"\d{4}-\d{2}-\d{2}")
@@ -34,13 +30,6 @@ class SearchParams:
     end: datetime | None = None
     drop_undated: bool = False
     exact_match: bool = False
-
-
-@dataclass
-class Hit:
-    doc_id: int
-    score: float
-    snippets: list[str]
 
 
 def _parse_day(raw: str, name: str) -> date:
@@ -77,93 +66,29 @@ def normalize_domain(raw: str) -> str:
     return raw.removeprefix("www.").rstrip(".")
 
 
-def _host_matches(host: str, domains: list[str]) -> bool:
-    host = normalize_domain(host)
-    return any(host == d or host.endswith("." + d) for d in map(normalize_domain, domains) if d)
+def _domains(raw: list[str]) -> list[str]:
+    return [d for d in map(normalize_domain, raw) if d]
 
 
-def _contains(tokens: list[str], phrase: list[str]) -> bool:
-    n = len(phrase)
-    return any(tokens[i : i + n] == phrase for i in range(len(tokens) - n + 1))
+def quoted_phrases(query: str) -> list[str]:
+    """Token-joined `"quoted phrases"` of a query, as matched against `search_tokens`."""
+    return [" ".join(tokens) for q in _QUOTED.findall(query) if (tokens := tokenize(q))]
 
 
-def _allowed_docs(index: Index, p: SearchParams) -> np.ndarray:
-    phrases = [tokenize(q) for q in _QUOTED.findall(p.query)] if p.exact_match else []
-    phrases = [ph for ph in phrases if ph]
-    allowed = np.zeros(len(index.docs), dtype=bool)
-    for i, doc in enumerate(index.docs):
-        if (
-            p.include_domains
-            and not p.prefer_domains
-            and not _host_matches(doc.host, p.include_domains)
-        ):
-            continue
-        if p.exclude_domains and _host_matches(doc.host, p.exclude_domains):
-            continue
-        if p.start or p.end:
-            if doc.published_date is None:
-                if p.drop_undated:
-                    continue
-            elif (p.start and doc.published_date < p.start) or (
-                p.end and doc.published_date > p.end
-            ):
-                continue
-        if phrases and not all(_contains(index.doc_tokens[i], ph) for ph in phrases):
-            continue
-        allowed[i] = True
-    return allowed
-
-
-def _ranked(chunk_ids: np.ndarray, scores: np.ndarray) -> list[tuple[int, int]]:
-    """Top CANDIDATES (chunk_id, rank) by score; tied scores share a rank (1 + #strictly higher)."""
-    order = np.lexsort((chunk_ids, -scores))[:CANDIDATES]
-    out = []
-    for pos, i in enumerate(order):
-        rank = out[-1][1] if pos and scores[i] == scores[order[pos - 1]] else pos + 1
-        out.append((int(chunk_ids[i]), rank))
-    return out
-
-
-def _fuse(index: Index, embedder: Embedder, query: str, chunk_ids: np.ndarray) -> dict[int, float]:
-    """Reciprocal-rank fusion of BM25 and vector candidates over the given chunks."""
-    rrf: dict[int, float] = {}
-    bm25 = index.bm25.get_scores(tokenize(query))[chunk_ids]
-    positive = bm25 > 0
-    lexical = _ranked(chunk_ids[positive], bm25[positive])
-    semantic = _ranked(chunk_ids, index.embeddings[chunk_ids] @ embedder.embed([query])[0])
-    for ranked in (lexical, semantic):
-        for cid, rank in ranked:
-            rrf[cid] = rrf.get(cid, 0.0) + 1 / (RRF_K + rank)
-    return rrf
-
-
-def search(index: Index, embedder: Embedder, p: SearchParams) -> list[Hit]:
+def search(store: Store, embedder: Embedder, p: SearchParams) -> list[SearchRow]:
     if p.max_results <= 0:
         return []
-    allowed = _allowed_docs(index, p)
-    chunk_ids = np.flatnonzero(allowed[index.chunk_doc])
-    if chunk_ids.size == 0:
-        return []
-    rrf = _fuse(index, embedder, p.query, chunk_ids)
-
-    per_doc: dict[int, list[tuple[float, int]]] = {}
-    for cid, score in rrf.items():
-        per_doc.setdefault(index.chunks[cid].doc_id, []).append((score, cid))
-    hits = []
-    for doc_id, scored in per_doc.items():
-        scored.sort(key=lambda sc: (-sc[0], sc[1]))
-        snippets = [index.chunks[cid].text for _, cid in scored[: p.chunks_per_source]]
-        hits.append(Hit(doc_id=doc_id, score=scored[0][0] / _MAX_RRF, snippets=snippets))
-
-    hits.sort(key=lambda h: (-h.score, index.docs[h.doc_id].url))
-    if p.prefer_domains and p.include_domains:
-        hits.sort(key=lambda h: not _host_matches(index.docs[h.doc_id].host, p.include_domains))
-    return hits[: p.max_results]
-
-
-def extract_chunks(index: Index, embedder: Embedder, doc_id: int, query: str, k: int) -> list[str]:
-    """Top-k chunks of one document for `query`, most relevant first."""
-    chunk_ids = np.flatnonzero(index.chunk_doc == doc_id)
-    rrf = _fuse(index, embedder, query, chunk_ids)
-    ranked = sorted(rrf.items(), key=lambda kv: (-kv[1], kv[0]))
-    return [index.chunks[cid].text for cid, _ in ranked[:k]]
+    include = _domains(p.include_domains)
+    return store.search(
+        embedder.embed([p.query])[0],
+        embedder.model,
+        max_results=p.max_results,
+        chunks_per_source=p.chunks_per_source,
+        include_domains=include,
+        exclude_domains=_domains(p.exclude_domains),
+        prefer_domains=p.prefer_domains and bool(include),
+        window_start=p.start,
+        window_end=p.end,
+        drop_undated=p.drop_undated,
+        phrases=quoted_phrases(p.query) if p.exact_match else [],
+    )

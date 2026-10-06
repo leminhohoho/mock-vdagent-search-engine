@@ -21,7 +21,10 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(128, ge=1)
 
     corpus_dir: Path = Path("data/corpus")
-    index_dir: Path = Path("data/index")
+
+    # Postgres connection string (Supabase session pooler); required by ingest and serve.
+    database_url: str | None = None
+    db_pool_size: int = Field(5, ge=1)
 
     mock_api_key: str | None = None
     mock_now: datetime | None = None

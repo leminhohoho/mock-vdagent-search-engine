@@ -13,10 +13,11 @@ from tavily import BadRequestError, InvalidAPIKeyError, TavilyClient
 
 from mockserp.api import create_app
 from mockserp.config import Settings
+from mockserp.db import Store
 from mockserp.embedder import EmbeddingError
-from mockserp.index import Index, build_index
+from mockserp.ingest import ingest
 
-from .conftest import HashEmbedder, para, write_corpus
+from .conftest import HashEmbedder, RecordingEmbedder, para, write_corpus
 
 KEY = "tvly-mock-key"
 BAT = {
@@ -47,11 +48,19 @@ FLY = {
 
 
 @pytest.fixture(scope="module")
-def index(tmp_path_factory) -> Index:
-    root = tmp_path_factory.mktemp("api")
-    write_corpus(root / "corpus", [BAT, HYDRO, FLY])
-    build_index(root / "corpus", root / "index", HashEmbedder())
-    return Index.load(root / "index")
+def db(store, tmp_path_factory) -> Store:
+    corpus = tmp_path_factory.mktemp("api-corpus")
+    write_corpus(corpus, [BAT, HYDRO, FLY])
+    ingest(corpus, store, HashEmbedder())
+    return store
+
+
+@pytest.fixture
+def unreachable() -> Store:
+    """A store whose database never answers (nothing listens on port 1)."""
+    s = Store("postgresql://mockserp@127.0.0.1:1/none?connect_timeout=1", timeout=0.5)
+    yield s
+    s.close()
 
 
 def _settings(**kw) -> Settings:
@@ -59,8 +68,8 @@ def _settings(**kw) -> Settings:
 
 
 @pytest.fixture(scope="module")
-def base_url(index):
-    app = create_app(index, HashEmbedder(), _settings(mock_api_key=KEY))
+def base_url(db):
+    app = create_app(db, HashEmbedder(), _settings(mock_api_key=KEY))
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
@@ -226,24 +235,85 @@ def test_extract_more_than_20_urls_is_bad_request(client):
 # --- non-SDK paths ---------------------------------------------------------------------------
 
 
-def test_no_configured_key_accepts_requests_without_authorization(index):
-    tc = TestClient(create_app(index, HashEmbedder(), _settings()))
+def test_no_configured_key_accepts_requests_without_authorization(db):
+    tc = TestClient(create_app(db, HashEmbedder(), _settings()))
     assert tc.post("/search", json={"query": "battery"}).status_code == 200
 
 
-def test_validation_errors_use_tavily_error_shape(index):
-    tc = TestClient(create_app(index, HashEmbedder(), _settings()))
+def test_validation_errors_use_tavily_error_shape(unreachable):
+    tc = TestClient(create_app(unreachable, HashEmbedder(), _settings()))
     r = tc.post("/search", json={"query": "battery", "max_results": 99})
     assert r.status_code == 400
     assert "max_results" in r.json()["detail"]["error"]
 
 
-def test_embedding_backend_failure_is_500(index):
+def test_embedding_backend_failure_is_500(unreachable):
     class Down(HashEmbedder):
         def embed(self, texts):
             raise EmbeddingError("connection refused")
 
-    tc = TestClient(create_app(index, Down(), _settings()))
+    tc = TestClient(create_app(unreachable, Down(), _settings()))
     r = tc.post("/search", json={"query": "battery"})
     assert r.status_code == 500
     assert r.json() == {"detail": {"error": "embedding backend unavailable: connection refused"}}
+
+
+def test_unreachable_database_during_a_request_is_500(unreachable):
+    tc = TestClient(create_app(unreachable, HashEmbedder(), _settings()))
+    for path, body in [("/search", {"query": "battery"}), ("/extract", {"urls": BAT["url"]})]:
+        r = tc.post(path, json=body)
+        assert r.status_code == 500
+        assert r.json()["detail"]["error"].startswith("search backend unavailable: ")
+
+
+def test_zero_max_results_touches_neither_embedding_api_nor_database(unreachable):
+    embedder = RecordingEmbedder()
+    tc = TestClient(create_app(unreachable, embedder, _settings()))
+    r = tc.post("/search", json={"query": "battery", "max_results": 0})
+    assert r.status_code == 200 and r.json()["results"] == []
+    assert embedder.calls == []
+
+
+def test_query_in_another_embedding_space_is_500_with_the_reason(db):
+    tc = TestClient(create_app(db, HashEmbedder(model="other"), _settings()))
+    for path, body in [
+        ("/search", {"query": "battery"}),
+        ("/extract", {"urls": BAT["url"], "query": "battery"}),
+    ]:
+        r = tc.post(path, json=body)
+        assert r.status_code == 500
+        assert r.json() == {
+            "detail": {"error": "index built with hash-test/256; query uses other/256"}
+        }
+
+
+# --- /healthz ------------------------------------------------------------------------------------
+
+
+def test_healthz_reports_the_index_without_requiring_a_key(db):
+    tc = TestClient(create_app(db, HashEmbedder(), _settings(mock_api_key=KEY)))
+    r = tc.get("/healthz")
+    assert r.status_code == 200
+    assert r.json() == {
+        "status": "ok",
+        "index_version": db.meta().version,
+        "embedding_model": "hash-test",
+        "n_docs": 3,
+    }
+
+
+def test_healthz_is_503_when_the_database_is_unreachable(unreachable):
+    r = TestClient(create_app(unreachable, HashEmbedder(), _settings())).get("/healthz")
+    assert r.status_code == 503
+    body = r.json()
+    assert body["status"] == "unavailable" and body["error"]
+
+
+def test_healthz_is_503_before_the_first_ingest(fresh_db_url):
+    empty = Store(fresh_db_url)
+    try:
+        r = TestClient(create_app(empty, HashEmbedder(), _settings())).get("/healthz")
+    finally:
+        empty.close()
+    assert r.status_code == 503
+    assert r.json() == {"status": "unavailable", "error": "nothing ingested"}

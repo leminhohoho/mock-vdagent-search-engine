@@ -1,4 +1,4 @@
-"""Tavily-compatible HTTP API: POST /search and POST /extract."""
+"""Tavily-compatible HTTP API: POST /search, POST /extract, and GET /healthz."""
 
 import hashlib
 import time
@@ -13,10 +13,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings
-from .corpus import Document, format_date
+from .corpus import format_date, normalize_url
+from .db import IndexMismatch, Store, StoreError
 from .embedder import Embedder, EmbeddingError
-from .index import Index
-from .search import SearchError, SearchParams, extract_chunks, resolve_window, search
+from .search import SearchError, SearchParams, resolve_window, search
 
 SNIPPET_JOIN = " [...] "
 
@@ -57,14 +57,14 @@ def _error(status: int, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"error": message})
 
 
-def _result_id(doc: Document) -> str:
-    return hashlib.sha1(doc.norm_url.encode()).hexdigest()[:8]
+def _result_id(url: str) -> str:
+    return hashlib.sha1(normalize_url(url).encode()).hexdigest()[:8]
 
 
-def _favicon(doc: Document) -> str:
-    if doc.favicon:
-        return doc.favicon
-    parts = urlsplit(doc.url)
+def _favicon(url: str, favicon: str | None) -> str:
+    if favicon:
+        return favicon
+    parts = urlsplit(url)
     return f"{parts.scheme}://{parts.netloc}/favicon.ico"
 
 
@@ -76,8 +76,8 @@ def _envelope(started: float, **body) -> dict:
     }
 
 
-def create_app(index: Index, embedder: Embedder, settings: Settings) -> FastAPI:
-    app = FastAPI(title="mockserp", description="Mock Tavily search over a local corpus")
+def create_app(store: Store, embedder: Embedder, settings: Settings) -> FastAPI:
+    app = FastAPI(title="mockserp", description="Mock Tavily search over a Postgres corpus")
 
     def now() -> datetime:
         if settings.mock_now is None:
@@ -105,6 +105,32 @@ def create_app(index: Index, embedder: Embedder, settings: Settings) -> FastAPI:
             status_code=500, content={"detail": {"error": f"embedding backend unavailable: {exc}"}}
         )
 
+    @app.exception_handler(StoreError)
+    async def _store(_: Request, exc: StoreError) -> JSONResponse:
+        message = (
+            str(exc) if isinstance(exc, IndexMismatch) else f"search backend unavailable: {exc}"
+        )
+        return JSONResponse(status_code=500, content={"detail": {"error": message}})
+
+    @app.get("/healthz")
+    def healthz() -> JSONResponse:
+        try:
+            meta = store.meta()
+        except StoreError as e:
+            return JSONResponse(status_code=503, content={"status": "unavailable", "error": str(e)})
+        if meta is None:
+            return JSONResponse(
+                status_code=503, content={"status": "unavailable", "error": "nothing ingested"}
+            )
+        return JSONResponse(
+            {
+                "status": "ok",
+                "index_version": meta.version,
+                "embedding_model": meta.embedding_model,
+                "n_docs": meta.n_docs,
+            }
+        )
+
     @app.post("/search", dependencies=[Depends(authorize)])
     def search_endpoint(req: SearchRequest) -> dict:
         started = time.perf_counter()
@@ -117,8 +143,8 @@ def create_app(index: Index, embedder: Embedder, settings: Settings) -> FastAPI:
         except SearchError as e:
             raise _error(400, str(e)) from e
 
-        hits = search(
-            index,
+        rows = search(
+            store,
             embedder,
             SearchParams(
                 query=req.query,
@@ -138,22 +164,21 @@ def create_app(index: Index, embedder: Embedder, settings: Settings) -> FastAPI:
             req.include_published_date or req.filter_by_published_date or req.topic == "news"
         )
         results = []
-        for hit in hits:
-            doc = index.docs[hit.doc_id]
+        for row in rows:
             result = {
-                "id": _result_id(doc),
-                "title": doc.title,
-                "url": doc.url,
-                "content": SNIPPET_JOIN.join(hit.snippets),
-                "score": hit.score,
-                "raw_content": doc.raw_content if req.include_raw_content else None,
+                "id": _result_id(row.url),
+                "title": row.title,
+                "url": row.url,
+                "content": SNIPPET_JOIN.join(row.snippets),
+                "score": row.score,
+                "raw_content": row.raw_content if req.include_raw_content else None,
             }
             if show_date:
                 result["published_date"] = (
-                    format_date(doc.published_date) if doc.published_date else None
+                    format_date(row.published_date) if row.published_date else None
                 )
             if req.include_favicon:
-                result["favicon"] = _favicon(doc)
+                result["favicon"] = _favicon(row.url, row.favicon)
             results.append(result)
 
         body = {"query": req.query, "answer": None, "images": [], "results": results}
@@ -168,22 +193,27 @@ def create_app(index: Index, embedder: Embedder, settings: Settings) -> FastAPI:
         if not 1 <= len(urls) <= 20:
             raise _error(400, "urls must contain between 1 and 20 URLs")
 
+        docs = store.documents_by_norm_url(sorted({normalize_url(u) for u in urls}))
+        query = req.query if req.query and req.query.strip() else None
+        query_embedding = embedder.embed([query])[0] if query and docs else None
+
         results, failed = [], []
         for url in urls:
-            doc_id = index.doc_id_for_url(url)
-            if doc_id is None:
+            doc = docs.get(normalize_url(url))
+            if doc is None:
                 failed.append({"url": url, "error": "Failed to fetch url"})
                 continue
-            doc = index.docs[doc_id]
-            if req.query and req.query.strip():
+            if query_embedding is not None:
                 raw = SNIPPET_JOIN.join(
-                    extract_chunks(index, embedder, doc_id, req.query, req.chunks_per_source)
+                    store.extract_chunks(
+                        query_embedding, embedder.model, doc.id, req.chunks_per_source
+                    )
                 )
             else:
                 raw = doc.raw_content
             result = {"url": url, "raw_content": raw, "images": []}
             if req.include_favicon:
-                result["favicon"] = _favicon(doc)
+                result["favicon"] = _favicon(doc.url, doc.favicon)
             results.append(result)
 
         body = {"results": results, "failed_results": failed}

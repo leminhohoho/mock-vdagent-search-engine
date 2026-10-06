@@ -52,8 +52,8 @@ def corpus_sha256(corpus_dir: Path) -> str:
     return h.hexdigest()
 
 
-def ingest(corpus_dir: Path, store: Store, embedder: Embedder) -> IndexMeta:
-    """Replace the stored corpus; corpus or embedding errors leave the database untouched."""
+def prepare(corpus_dir: Path, embedder: Embedder) -> tuple[list[DocumentRecord], IndexMeta]:
+    """Load, chunk and embed the corpus without touching the database."""
     docs = load_corpus(corpus_dir)
     records = build_records(docs, embedder)
     sha = corpus_sha256(corpus_dir)
@@ -67,5 +67,11 @@ def ingest(corpus_dir: Path, store: Store, embedder: Embedder) -> IndexMeta:
         corpus_sha256=sha,
         built_at=built_at,
     )
+    return records, meta
+
+
+def ingest(corpus_dir: Path, store: Store, embedder: Embedder) -> IndexMeta:
+    """Replace the stored corpus; corpus or embedding errors leave the database untouched."""
+    records, meta = prepare(corpus_dir, embedder)
     store.replace_corpus(records, meta)
     return meta

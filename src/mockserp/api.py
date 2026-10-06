@@ -1,15 +1,16 @@
-"""Tavily-compatible HTTP API: POST /search, POST /extract, and GET /healthz."""
+"""Tavily-compatible HTTP API: POST /search, POST /extract, GET /healthz, GET /playground."""
 
 import hashlib
 import time
 import uuid
 from datetime import UTC, datetime
+from importlib.resources import files
 from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings
@@ -19,6 +20,7 @@ from .embedder import Embedder, EmbeddingError
 from .search import SearchError, SearchParams, resolve_window, search
 
 SNIPPET_JOIN = " [...] "
+PLAYGROUND_HTML = (files(__package__) / "playground.html").read_text(encoding="utf-8")
 
 
 class _Request(BaseModel):
@@ -111,6 +113,10 @@ def create_app(store: Store, embedder: Embedder, settings: Settings) -> FastAPI:
             str(exc) if isinstance(exc, IndexMismatch) else f"search backend unavailable: {exc}"
         )
         return JSONResponse(status_code=500, content={"detail": {"error": message}})
+
+    @app.get("/playground", include_in_schema=False)
+    def playground() -> HTMLResponse:
+        return HTMLResponse(PLAYGROUND_HTML)
 
     @app.get("/healthz")
     def healthz() -> JSONResponse:

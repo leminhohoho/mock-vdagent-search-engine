@@ -317,3 +317,14 @@ def test_healthz_is_503_before_the_first_ingest(fresh_db_url):
         empty.close()
     assert r.status_code == 503
     assert r.json() == {"status": "unavailable", "error": "nothing ingested"}
+
+
+# --- /playground ---------------------------------------------------------------------------------
+
+
+def test_playground_page_is_served_without_a_key_and_kept_out_of_the_api_schema(unreachable):
+    tc = TestClient(create_app(unreachable, HashEmbedder(), _settings(mock_api_key=KEY)))
+    r = tc.get("/playground")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert "/playground" not in tc.get("/openapi.json").json()["paths"]

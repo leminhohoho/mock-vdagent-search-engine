@@ -75,6 +75,8 @@ Errors use Tavily's `{"detail": {"error": "..."}}` shape: 400 for invalid input,
 
 `GET /healthz` (no auth) returns `200 {"status": "ok", "index_version", "embedding_model", "n_docs"}`, or 503 when the database is unreachable or empty. Use it as a readiness check, not a liveness check.
 
+`GET /playground` (no auth) is a minimal browser page for trying `/search`: edit the JSON body (starts as `query` + `max_results`), optionally enter the API key, and send. Requests from the page still need the key when `MOCK_API_KEY` is set.
+
 ## Configuration
 
 See [`.env.example`](.env.example). Values in `./.env` **override shell environment variables**, so a globally exported `OPENAI_API_KEY` for another provider can't leak in. Shell variables still apply to settings that `.env` doesn't set. Within each source, `EMBEDDING_*` takes precedence over `OPENAI_BASE_URL` / `OPENAI_API_KEY`.

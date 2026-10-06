@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mockserp · /search playground</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+  textarea, input, pre { font: 13px/1.4 ui-monospace, monospace; width: 100%; box-sizing: border-box; }
+  textarea { height: 8rem; }
+  pre { background: #f5f5f5; padding: .75rem; overflow: auto; max-height: 70vh; white-space: pre-wrap; }
+  .row { margin: .75rem 0; }
+  #status.error { color: #b00020; }
+</style>
+</head>
+<body>
+<h1>POST /search</h1>
+<div class="row">
+  <label for="key">API key (sent as <code>Authorization: Bearer …</code>; leave empty if none is configured)</label>
+  <input id="key" type="password" autocomplete="off">
+</div>
+<div class="row">
+  <label for="body">Request body (JSON)</label>
+  <textarea id="body" spellcheck="false">{
+  "query": "nhà ở xã hội",
+  "max_results": 5
+}</textarea>
+</div>
+<div class="row"><button id="send">Send</button> <span id="status"></span></div>
+<pre id="out"></pre>
+<script>
+const $ = (id) => document.getElementById(id);
+async function send() {
+  const status = $("status"), out = $("out");
+  status.className = ""; out.textContent = "";
+  let body;
+  try {
+    body = JSON.parse($("body").value);
+  } catch (e) {
+    status.className = "error";
+    status.textContent = "Invalid JSON: " + e.message;
+    return;
+  }
+  const headers = { "Content-Type": "application/json" };
+  const key = $("key").value.trim();
+  if (key) headers.Authorization = "Bearer " + key;
+  status.textContent = "Sending…";
+  const started = performance.now();
+  try {
+    const r = await fetch("search", { method: "POST", headers, body: JSON.stringify(body) });
+    const ms = Math.round(performance.now() - started);
+    const text = await r.text();
+    status.className = r.ok ? "" : "error";
+    status.textContent = `HTTP ${r.status} · ${ms} ms`;
+    try { out.textContent = JSON.stringify(JSON.parse(text), null, 2); } catch { out.textContent = text; }
+  } catch (e) {
+    status.className = "error";
+    status.textContent = "Request failed: " + e.message;
+  }
+}
+$("send").addEventListener("click", send);
+$("body").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send();
+});
+</script>
+</body>
+</html>

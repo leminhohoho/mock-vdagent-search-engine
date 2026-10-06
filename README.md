@@ -91,7 +91,7 @@ docker run -p 8000:8000 \
   -e DATABASE_URL -e EMBEDDING_API_KEY -e EMBEDDING_BASE_URL -e MOCK_API_KEY mockserp
 ```
 
-The image holds no corpus and no `.env`; it binds `0.0.0.0` (so `MOCK_API_KEY` is required) and listens on `PORT` (default 8000). Run one process per container and scale by adding containers; each holds at most `DB_POOL_SIZE` connections. Deploy close to the Supabase project's region.
+The image holds no corpus and no `.env`; it binds `0.0.0.0` (so `MOCK_API_KEY` is required) and listens on `PORT` (default 8000). It also sets `MOCK_NOW=2026-10-06T00:00:00Z`, so `time_range` results don't change from day to day; pass `-e MOCK_NOW=...` to use another date. Run one process per container and scale by adding containers; each holds at most `DB_POOL_SIZE` connections. Deploy close to the Supabase project's region.
 
 ## Development
 
